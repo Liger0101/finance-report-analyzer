@@ -35,6 +35,8 @@ finance-report-analyzer/
 │ └── main.py # 主程序入口
 ├── output/ # 输出目录
 │ └── *.md # 财务分析报告
+├── docs/
+│ └── demo.gif # 代码演示gif
 ├── README.md
 └── requirements.txt
 ```
