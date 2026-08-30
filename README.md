@@ -83,4 +83,4 @@ pip install -r requirements.txt
 - 部分股票代码前导是0，目前已用 zfill(6) 处理，但需全程保持字符串
 
 ## 效果展示
-![演示](https://raw.githubusercontent.com/Liger0101/finance-report-analyzer/main/docs/demo.gif)
+![演示](https://raw.githubusercontent.com/Liger0101/finance-report-analyzer/master/docs/demo.gif)
