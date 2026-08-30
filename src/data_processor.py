@@ -8,8 +8,6 @@ import os
 import numpy as np
 import glob
 
-from akshare import stock_a_code_to_symbol
-
 # 所需的数值列表，类型统一为float
 NUMERIC_COLUMNS = [
     'revenue',           # 营业收入
@@ -26,14 +24,14 @@ NUMERIC_COLUMNS = [
 ]
 
 # 数据读取
-def data_load(filepath: str) -> pd.DataFrame:
+def data_load(filepath: str, verbose: bool = False) -> pd.DataFrame:
     '''
     读取数据
     :param filepath: 数据存放的文件路径
     '''
     df = pd.read_csv(filepath, encoding='utf-8-sig')
-    print(f'已读取文件路径：{os.path.basename(filepath)}')
-    print('文件形状为：', df.shape)
+    if verbose:
+        print(f'已读取: {os.path.basename(filepath)}, 形状: {df.shape}')
     return df
 
 # 中文处理
@@ -62,7 +60,7 @@ def _convert_chinese_unit(value: str):
         return np.nan
 
 # 数据清洗
-def data_clean(df: pd.DataFrame) -> pd.DataFrame:
+def data_clean(df: pd.DataFrame, verbose: bool = False) -> pd.DataFrame:
     '''
     对数据进行清理，保留有效数据列，去除符号以及中文字符，转化数据为float并去除缺失值
     :param df:原始dataframe
@@ -76,17 +74,20 @@ def data_clean(df: pd.DataFrame) -> pd.DataFrame:
             # 字符串转换
             df_clean[col] = df_clean[col].astype(str).str.strip()
             # 去除%和，
-            df_clean[col] = df_clean[col].str.replace(',', '').str.replace('%', '')
+            df_clean[col] = df_clean[col].str.replace(',', '', regex = False).str.replace('%', '', regex = False)
 
             # 处理中文单位
             df_clean[col] = df_clean[col].apply(_convert_chinese_unit)
             # 转float
             df_clean[col] = pd.to_numeric(df_clean[col], errors='coerce')
 
+    if verbose:
+        print('数据清洗完成')
+
     return df_clean
 
 # 计算补充指标
-def calculate_indicators(df_clean: pd.DataFrame) -> pd.DataFrame:
+def calculate_indicators(df_clean: pd.DataFrame, verbose: bool = False) -> pd.DataFrame:
     '''
     计算缺失的衍生指标。
     如果某些指标在原始数据中不存在，可以用其他指标推算。
@@ -102,13 +103,17 @@ def calculate_indicators(df_clean: pd.DataFrame) -> pd.DataFrame:
             df_cal.loc[data_miss, 'net_profit'] / df_cal.loc[data_miss, 'revenue'].replace(0,np.nan) * 100
         )
 
-    #  如果revenue_yoy（营业总收入同比增长率）不存在，则可以用邻期的revenue计算（暂定）
+    # 净利润现金比 profit_cash_ratio = ocf_ps(每股经营现金流) / eps(基本每股收益)
+    # 含义：每股收益中有多少现金流支撑, 其中>1为满足条件
+    if 'ocf_ps' in df_cal.columns and 'eps' in df_cal.columns:
+        df_cal['profit_cash_ratio'] = (df_cal['ocf_ps'] / df_cal['eps'].replace(0,np.nan))
 
-    print('衍生指标完成')
+    if verbose:
+        print('衍生指标完成，补全字段net_margin, 补充字段profit_cash_ratio')
     return df_cal
 
 # 生成字典
-def dict_crate(df_cal: pd.DataFrame) -> pd.DataFrame:
+def dict_crate(df_cal: pd.DataFrame, verbose: bool = False) -> dict:
     '''
     通过对最新一期数据的提取，生成指标字典，以供LLM进行报告生成
     :param df_cal:衍生指标处理过后的dataframe
@@ -139,30 +144,42 @@ def dict_crate(df_cal: pd.DataFrame) -> pd.DataFrame:
     for col in NUMERIC_COLUMNS:
         value = latest_data.get(col)
         if value is not None and not pd.isna(value):
-            result[col] = round(latest_data.get(col), 2)
+            result[col] = round(float(value), 2)
         else:
             result[col] = None
+
+    # 对于计算时添加了profit_cash_ratio列，所以单独处理
+    if 'profit_cash_ratio' in latest_data.index:
+        value = latest_data.get('profit_cash_ratio')
+        if value is not None and not pd.isna(value):
+            result['profit_cash_ratio'] = round(float(value), 2)
+        else:
+            result['profit_cash_ratio'] = None
+
+    if verbose:
+        print('字典生成完成')
 
     return result
 
 # 单个公司数据处理
-def process_single(filepath: str) -> dict:
+def process_single(filepath: str, verbose: bool = False) -> dict:
     '''
     进行完整的流程：读取，清洗，指标补充，返回字典
     '''
-    df = data_load(filepath)
-    df_clean = data_clean(df)
-    df_cal = calculate_indicators(df_clean)
-    final_dict = dict_crate(df_cal)
+    df = data_load(filepath, verbose=verbose)
+    df_clean = data_clean(df, verbose=verbose)
+    df_cal = calculate_indicators(df_clean, verbose=verbose)
+    final_dict = dict_crate(df_cal, verbose=verbose)
 
-    print("字典生成完成")
-    for key,value in final_dict.items():
-        print(f'{key}: {value}')
+    if verbose:
+        print("字典生成完成")
+        for key,value in final_dict.items():
+            print(f'{key}: {value}')
 
     return final_dict
 
 # 批量处理
-def process_all(data_dir: str) -> dict:
+def process_all(data_dir: str, verbose: bool = False) -> dict:
     '''
     批量处理 data目录下所有 CSV
     返回 {公司名: 指标字典}
@@ -172,13 +189,15 @@ def process_all(data_dir: str) -> dict:
 
     for filepath in csv_files:
         company_name = os.path.basename(filepath).replace('.csv', '').replace('_financial','')
-        print(f"\n{'=' * 50}")
-        print(f"处理: {company_name}")
-        print(f"{'=' * 50}")
+        if verbose:
+            print(f"\n{'=' * 50}")
+            print(f"处理: {company_name}")
+            print(f"{'=' * 50}")
 
         try:
-            results[company_name] = process_single(filepath)
-            print(f'{company_name}处理完成')
+            results[company_name] = process_single(filepath, verbose=verbose)
+            if verbose:
+                print(f'{company_name}处理完成')
         except Exception as e:
             print(f'{company_name}处理失败')
 

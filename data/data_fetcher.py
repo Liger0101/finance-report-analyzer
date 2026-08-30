@@ -83,9 +83,10 @@ def standardize_columns(df: pd.DataFrame, keep_only_standard: bool = True) -> pd
     df_renamed = df.rename(columns=rename_map)
 
     # 如果需要只保留标准列
+    standard_cols = list(STANDARD_COLUMNS.values())
+
     if keep_only_standard:
         # 只保留标准英文列
-        standard_cols = list(STANDARD_COLUMNS.values())
         cols_to_keep = []
         for col in standard_cols:
             if col in df_renamed.columns:
@@ -148,7 +149,7 @@ def fetch_and_save(stock_code: str, symbol: str = None, filename: str = None):
     clean = standardize_columns(raw)
 
     if filename is None:
-        filename = f'{stock_code}_financial.csv'
+        filename = f'{symbol or stock_code}_financial.csv'
 
     save_to_csv(clean, filename)
     return clean
